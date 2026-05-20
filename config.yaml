@@ -2,7 +2,7 @@ model:
   path: models/yolov8m.pt   # medium model — better accuracy
   confidence: 0.4           # detections below this score are ignored
   classes: [2, 5, 7]        # COCO classes: 2=car, 5=bus, 7=truck
-  imgsz: 1280                # inference size — must be multiple of 32 (320/640/960/1280)
+  imgsz: 960                # inference size — changed for test run
 
 video:
   source: videos/test.mp4

@@ -1,12 +1,10 @@
 import cv2
 
-CLASS_NAMES = {2: "car", 5: "bus", 7: "truck"}
-
 
 def draw_detections(frame, detections: list[dict]) -> None:
     for det in detections:
         x1, y1, x2, y2 = det["bbox"]
-        label = f"{CLASS_NAMES.get(det['class'], '?')} {det['confidence']:.2f}"
+        label = f"{det['class_name']} {det['confidence']:.2f}"
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(frame, label, (x1, y1 - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
