@@ -6,6 +6,11 @@ from core.pipeline import run, run_frame
 
 
 def parse_args():
+    """Parse command-line arguments for the application.
+
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser(
         description="Park_Sense — Parking lot occupancy detection",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -29,12 +34,18 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+    
+    # Initialize the global logger instance
     setup_logger(debug_mode=args.debug)
 
+    # Load default configuration and override with CLI arguments
     config = load_config(args.config)
     config = apply_overrides(config, args)
+    
+    # Resolve the correct video source
     video_path = get_video_path(args, config)
 
+    # Route to single frame processing or full video pipeline
     if args.frame is not None:
         run_frame(video_path, args.frame, config, save_path=args.save, no_display=args.no_display)
     else:

@@ -8,6 +8,14 @@ from utils.logger import logger
 
 
 def _make_detector(config: dict) -> VehicleDetector:
+    """Helper function to instantiate a VehicleDetector from the configuration.
+
+    Args:
+        config (dict): The loaded configuration dictionary.
+
+    Returns:
+        VehicleDetector: Initialized detector instance.
+    """
     return VehicleDetector(
         model_path=config["model"]["path"],
         confidence=config["model"]["confidence"],
@@ -17,10 +25,22 @@ def _make_detector(config: dict) -> VehicleDetector:
 
 
 def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: str = None, out_fps: float = None, start_sec: int = None, end_sec: int = None) -> None:
+    """Main pipeline to process a video, detect vehicles, and optionally save the output.
+
+    Args:
+        video_path (str): Path to the input video file.
+        config (dict): Configuration dictionary containing model and video settings.
+        save_path (str, optional): Path to save the processed output video.
+        save_frames_dir (str, optional): Directory to save individual detected frames as images.
+        out_fps (float, optional): Custom FPS for the output video playback.
+        start_sec (int, optional): Second to start processing from.
+        end_sec (int, optional): Second to stop processing at.
+    """
     detector = _make_detector(config)
     cap = open_video(video_path)
     w, h = get_display_size(config)
 
+    # Resolve total frames based on video length or config limit
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     max_frames = config["video"].get("max_frames", None)
     if max_frames:
@@ -31,6 +51,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
 
     writer = None
     if save_path:
+        # Adjust output FPS to maintain real-world playback speed when frames are skipped
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         final_fps = out_fps if out_fps is not None else max(1.0, fps_src / frame_interval)
         writer = cv2.VideoWriter(save_path, fourcc, final_fps, (w, h))
@@ -42,6 +63,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
 
     logger.info(f"Total frames: {total_frames} | FPS: {fps_src:.1f} | Frame interval: {frame_interval}")
     
+    # Seek to the requested start time if provided
     start_frame = 0
     if start_sec is not None:
         start_frame = int(start_sec * fps_src)
@@ -58,12 +80,14 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
     frame_idx = start_frame
     start = time.time()
 
+    # Main processing loop
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
 
+            # Process frame only if it matches the frame interval to save compute
             if frame_idx % frame_interval == 0:
                 detections = detector.detect(frame)
                 logger.debug(f"Frame {frame_idx}: ran inference, found {len(detections)} vehicle(s)")
@@ -71,23 +95,29 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
                 draw_detections(frame, detections)
                 draw_stats(frame, frame_idx, total_frames, len(detections))
 
+                # Resize frame for display/saving *after* drawing to prevent bounding box distortion
                 frame = cv2.resize(frame, (w, h))
 
+                # Save frame to output video
                 if writer:
                     writer.write(frame)
                 
+                # Save detected frame as an individual image
                 if save_frames_dir:
                     frame_path = os.path.join(save_frames_dir, f"frame_{frame_idx:06d}.jpg")
                     cv2.imwrite(frame_path, frame)
 
+            # Stop processing if maximum frames reached
             frames_processed = frame_idx - start_frame
             if max_frames and frames_processed >= max_frames - 1:
                 break
                 
+            # Stop processing if end time reached
             if end_frame and frame_idx >= end_frame:
                 logger.info(f"Reached end time ({end_sec}s). Stopping.")
                 break
 
+            # Log progress periodically
             if frame_idx % (frame_interval * 10) == 0 and frame_idx > start_frame:
                 elapsed = time.time() - start
                 fps_proc = frame_idx / elapsed if elapsed > 0 else 0
@@ -104,6 +134,15 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
 
 
 def run_frame(video_path: str, frame_number: int, config: dict, save_path: str = None, no_display: bool = False) -> None:
+    """Extract a single frame from the video, run detection, and optionally display or save it.
+
+    Args:
+        video_path (str): Path to the input video file.
+        frame_number (int): The specific frame index to extract.
+        config (dict): Configuration dictionary.
+        save_path (str, optional): Path to save the processed image.
+        no_display (bool, optional): If True, suppresses the OpenCV display window.
+    """
     detector = _make_detector(config)
     cap = open_video(video_path)
     w, h = get_display_size(config)
