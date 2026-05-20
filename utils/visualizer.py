@@ -2,6 +2,12 @@ import cv2
 
 
 def draw_detections(frame, detections: list[dict]) -> None:
+    """Draw bounding boxes and labels on the frame for each detection.
+
+    Args:
+        frame: OpenCV image frame (modified in place).
+        detections (list[dict]): List of detections from the VehicleDetector.
+    """
     for det in detections:
         x1, y1, x2, y2 = det["bbox"]
         label = f"{det['class_name']} {det['confidence']:.2f}"
@@ -11,6 +17,14 @@ def draw_detections(frame, detections: list[dict]) -> None:
 
 
 def draw_stats(frame, frame_idx: int, total_frames: int, detected: int) -> None:
+    """Draw processing statistics overlay on the top-left corner of the frame.
+
+    Args:
+        frame: OpenCV image frame (modified in place).
+        frame_idx (int): Current frame index.
+        total_frames (int): Total number of frames in the video.
+        detected (int): Number of vehicles detected in the current frame.
+    """
     lines = [
         f"Frame:    {frame_idx} / {total_frames}",
         f"Detected: {detected} vehicle(s)",

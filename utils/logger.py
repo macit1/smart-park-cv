@@ -3,6 +3,15 @@ import sys
 
 
 def setup_logger(name="ParkSense", debug_mode=False):
+    """Set up and configure a global logger with a standard formatter.
+
+    Args:
+        name (str, optional): Name of the logger. Defaults to "ParkSense".
+        debug_mode (bool, optional): If True, sets level to DEBUG. Defaults to False.
+
+    Returns:
+        logging.Logger: Configured logger instance.
+    """
     logger = logging.getLogger(name)
 
     if logger.hasHandlers():
