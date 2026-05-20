@@ -1,0 +1,15 @@
+model:
+  path: models/yolov8m.pt   # medium model — better accuracy
+  confidence: 0.4           # detections below this score are ignored
+  classes: [2, 5, 7]        # COCO classes: 2=car, 5=bus, 7=truck
+  imgsz: 1280                # inference size — must be multiple of 32 (320/640/960/1280)
+
+video:
+  source: videos/test.mp4
+  display_width: 1280
+  display_height: 720
+  frame_interval: 5           # run detection every N frames
+
+parking:
+  discovery_frames: 60      # frames used to learn slot positions (Phase 2)
+  iou_threshold: 0.3        # overlap threshold for slot-vehicle matching
