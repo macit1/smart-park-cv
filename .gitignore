@@ -19,3 +19,4 @@ Thumbs.db
 models/*.pt
 videos/*.mp4
 outputs/
+workflow.html
