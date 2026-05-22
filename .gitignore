@@ -20,3 +20,7 @@ models/*.pt
 videos/*.mp4
 outputs/
 workflow.html
+
+# Local untracked documents
+issue.md
+CLAUDE.md
