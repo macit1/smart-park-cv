@@ -13,3 +13,5 @@ video:
 parking:
   discovery_frames: 60      # frames used to learn slot positions (Phase 2)
   iou_threshold: 0.3        # overlap threshold for slot-vehicle matching
+  slots_path: outputs/slots.json   # where discovered slots are saved/loaded
+  discovery_frame: 0        # which frame to use for slot configuration
