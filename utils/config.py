@@ -32,10 +32,4 @@ def apply_overrides(config: dict, args) -> dict:
         config["video"]["frame_interval"] = args.frame_interval
     if getattr(args, "max_frames", None) is not None:
         config["video"]["max_frames"] = args.max_frames
-    if getattr(args, "start_sec", None) is not None:
-        config["video"]["start_sec"] = args.start_sec
-    if getattr(args, "end_sec", None) is not None:
-        config["video"]["end_sec"] = args.end_sec
-    if getattr(args, "out_fps", None) is not None:
-        config["video"]["out_fps"] = args.out_fps
     return config

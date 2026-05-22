@@ -29,7 +29,6 @@ class VehicleDetector:
         Returns:
             list[dict]: List of detection dictionaries containing 'bbox', 'confidence', 'class_id', and 'class_name'.
         """
-        # Run YOLO inference
         # Run YOLO inference with verbose disabled to keep console clean
         results = self.model(
             frame,
