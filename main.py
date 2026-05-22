@@ -1,8 +1,13 @@
 import argparse
+import cv2
+import os
+
 from utils.config import load_config, apply_overrides
 from utils.video import get_video_path, extract_frame, open_video
+from utils.slots import load_slots
 from utils.logger import setup_logger, logger
 from core.pipeline import run, run_frame
+from core.slot_server import run_editor
 
 
 def parse_args():
@@ -35,50 +40,48 @@ def parse_args():
     return parser.parse_args()
 
 
+def _run_slot_editor(args, config, video_path: str) -> None:
+    slots_path = config["parking"].get("slots_path", "outputs/slots.json")
+
+    if args.discovery_image:
+        frame_img_path = args.discovery_image
+        logger.info(f"Using discovery image: {frame_img_path}")
+    else:
+        frame_num = args.slot_frame if args.slot_frame is not None else config["parking"].get("discovery_frame", 0)
+        frame_img_path = "outputs/discovery_frame.jpg"
+        cap = open_video(video_path)
+        frame = extract_frame(cap, frame_num)
+        cap.release()
+        os.makedirs("outputs", exist_ok=True)
+        cv2.imwrite(frame_img_path, frame)
+        logger.info(f"Saved discovery frame {frame_num} → {frame_img_path}")
+
+    if os.path.exists(slots_path):
+        slots = load_slots(slots_path)
+        logger.info(f"Loaded {len(slots)} existing slot(s) from {slots_path}")
+    else:
+        slots = []
+        logger.info(f"No existing slots file found at {slots_path}. Starting with empty slots.")
+
+    run_editor(frame_img_path, slots, slots_path)
+
+
 if __name__ == "__main__":
     args = parse_args()
-    
+
     # Initialize the global logger instance
     setup_logger(debug_mode=args.debug)
 
     # Load default configuration and override with CLI arguments
     config = load_config(args.config)
     config = apply_overrides(config, args)
-    
+
     # Resolve the correct video source
     video_path = get_video_path(args, config)
 
     # Route to single frame processing or full video pipeline
     if args.discover_slots:
-        import cv2 as _cv2
-        from core.slot_server import run_editor
-        from utils.slots import load_slots
-        import os as _os
-
-        slots_path = config["parking"].get("slots_path", "outputs/slots.json")
-
-        if args.discovery_image:
-            frame_img_path = args.discovery_image
-            logger.info(f"Using discovery image: {frame_img_path}")
-        else:
-            frame_num = args.slot_frame if args.slot_frame is not None else config["parking"].get("discovery_frame", 0)
-            frame_img_path = "outputs/discovery_frame.jpg"
-            cap = open_video(video_path)
-            frame = extract_frame(cap, frame_num)
-            cap.release()
-            _os.makedirs("outputs", exist_ok=True)
-            _cv2.imwrite(frame_img_path, frame)
-            logger.info(f"Saved discovery frame {frame_num} → {frame_img_path}")
-
-        # Load existing slots if available, otherwise start fresh
-        if _os.path.exists(slots_path):
-            slots = load_slots(slots_path)
-            logger.info(f"Loaded {len(slots)} existing slot(s) from {slots_path}")
-        else:
-            slots = []
-            logger.info(f"No existing slots file found at {slots_path}. Starting with empty slots.")
-
-        run_editor(frame_img_path, slots, slots_path)
+        _run_slot_editor(args, config, video_path)
 
     elif args.frame is not None:
         run_frame(video_path, args.frame, config, save_path=args.save, no_display=args.no_display)

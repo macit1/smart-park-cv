@@ -20,16 +20,16 @@ def setup_logger(name="ParkSense", debug_mode=False):
 
     logger.setLevel(logging.DEBUG if debug_mode else logging.INFO)
 
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.DEBUG if debug_mode else logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG if debug_mode else logging.INFO)
 
     formatter = logging.Formatter(
         "[%(asctime)s] [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
-    ch.setFormatter(formatter)
+    handler.setFormatter(formatter)
 
-    logger.addHandler(ch)
+    logger.addHandler(handler)
     logger.propagate = False
 
     return logger
