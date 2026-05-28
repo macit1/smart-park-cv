@@ -38,7 +38,8 @@ Park_Sense/
 ├── requirements.txt         # Python dependencies
 ├── core/
 │   ├── detector.py          # VehicleDetector class — YOLOv8 inference
-│   └── pipeline.py          # run() for full video, run_frame() for single frame
+│   ├── pipeline.py          # run() for full video, run_frame() for single frame
+│   └── slot_server.py       # Web-based slot configuration editor (Flask)
 ├── utils/
 │   ├── config.py            # load_config(), apply_overrides()
 │   ├── video.py             # open_video(), extract_frame(), get_display_size()
@@ -71,6 +72,9 @@ A class called `VehicleDetector`. You give it a frame (image), it gives back a l
 Two modes:
 - `run()` — full video loop, optional video save
 - `run_frame()` — jumps to a specific frame, runs detection, shows and/or saves it
+
+### `core/slot_server.py`
+A local Flask server providing an interactive SVG-overlay web interface for drawing, editing, moving, and deleting polygonal parking slots directly over a video frame. Saves coordinates to `outputs/slots.json`.
 
 ### `utils/config.py`
 - `load_config()` — reads `config.yaml` into a dict
@@ -117,6 +121,13 @@ All flags are optional. Config values are used as defaults — CLI flags overrid
 | `--no-display` | flag | Skip opening a window (useful when only saving) |
 | `--frame-interval` | int | Run detection every N frames (default: 5, set to 1 for every frame) |
 | `--max-frames` | int | Stop after N frames — useful for quick tests (e.g. `100`) |
+| `--discover-slots` | flag | Open web-based slot configuration editor, save `slots.json` |
+| `--slot-frame` | int | Frame number to use for slot configuration (overrides config) |
+| `--discovery-image` | path | Use this image directly for slot configuration (skips video frame extraction) |
+| `--start-sec` | int | Start processing at this second (e.g. `90`) |
+| `--end-sec` | int | Stop processing at this second (e.g. `120`) |
+| `--out-fps` | float | Output video FPS (e.g. `5.0` for faster playback) |
+| `--save-frames` | path | Directory to save detected frames as individual images |
 
 ### Examples
 
@@ -177,10 +188,9 @@ python main.py --video videos/test.mp4 --save outputs/result_final.mp4 --no-disp
 | Phase | What | Status |
 |-------|------|--------|
 | 1 | Detect vehicles with YOLOv8, draw bounding boxes, full CLI | ✅ Done |
-| 2 | Auto-discover parking slots from first N frames | ⬜ Next |
+| 2 | Manual slot configuration via web-based interactive editor | ⬜ Next |
 | 3 | Color-coded overlay (red=occupied, green=empty) + counter | ⬜ Planned |
-| 4 | Custom model training on PKLot dataset | ⬜ Future |
-| 5 | Geometric corrections (bird's eye view, perspective transform) | ⬜ Future |
+| 4 | Geometric corrections (bird's eye view, perspective transform) | ⬜ Future |
 
 ---
 
