@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Park_Sense — Slot Editor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  html, body { height: 100%; }
+  body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  /* Scrollbar polish */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  /* Canvas crosshair when drawing */
+  .cursor-draw { cursor: crosshair; }
+  .cursor-pointer-hint { cursor: pointer; }
+  /* Slide-in toast */
+  @keyframes toast-in {
+    from { transform: translateY(-12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  .toast-anim { animation: toast-in 0.18s ease-out; }
+  /* Subtle pulse for the empty-state hint */
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 0.85; }
+    50% { opacity: 1; }
+  }
+  .pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+  /* Keep canvas crisp */
+  canvas { display: block; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 overflow-hidden">
+
+<div x-data="slotEditor()" x-init="init()" class="h-screen flex flex-col">
+
+  <!-- Top bar -->
+  <header class="flex items-center gap-4 px-5 h-14 bg-slate-900 border-b border-slate-800 flex-shrink-0">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-md bg-gradient-to-br from-emerald-500 to-sky-500 flex items-center justify-center font-bold text-slate-950">P</div>
+      <h1 class="text-sm font-semibold tracking-tight">Park_Sense <span class="text-slate-500 font-normal">— Slot Editor</span></h1>
+    </div>
+
+    <span class="px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase"
+          :class="drawMode ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/40' : 'bg-slate-800 text-slate-400 ring-1 ring-slate-700'">
+      <span x-text="drawMode ? 'Drawing' : 'Select'"></span>
+    </span>
+
+    <div class="ml-auto text-xs text-slate-500 hidden md:flex items-center gap-4">
+      <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Ctrl D</kbd> draw</span>
+      <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Enter</kbd> close</span>
+      <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Z</kbd> undo point</span>
+      <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Esc</kbd> cancel</span>
+      <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">E</kbd> export</span>
+    </div>
+  </header>
+
+  <!-- Main area -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0">
+
+      <!-- TOP: Load Image — first action user takes -->
+      <div class="p-3 border-b border-slate-800">
+        <label class="block w-full text-center px-3 py-2.5 rounded-lg font-semibold text-sm cursor-pointer transition-all"
+               :class="!imageLoaded
+                  ? 'bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-900/40 ring-1 ring-sky-400/40'
+                  : 'bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700'">
+          <span x-text="imageLoaded ? '📁 Change Image…' : '📁 Load Image to Begin'"></span>
+          <input type="file" accept="image/*" class="hidden" @change="onPick($event)" />
+        </label>
+      </div>
+
+      <!-- Slot count -->
+      <div class="px-5 py-3.5 border-b border-slate-800">
+        <div class="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Parking Slots</div>
+        <div class="text-3xl font-bold text-sky-400 mt-0.5" x-text="slots.length"></div>
+      </div>
+
+      <!-- Slot list -->
+      <div class="flex-1 overflow-y-auto p-3 space-y-1.5">
+        <template x-for="slot in slots" :key="slot.id">
+          <div @click="selectSlot(slot.id)"
+               class="flex items-center gap-2.5 pl-2 pr-3 py-2 rounded-lg cursor-pointer border-l-4 transition-all"
+               :class="selectedId === slot.id
+                  ? 'bg-slate-700 shadow-md ring-1 ring-white/15'
+                  : 'bg-slate-800/40 hover:bg-slate-800/80 border-l-transparent'"
+               :style="selectedId === slot.id ? `border-left-color:${slot.color}` : ''">
+            <div class="w-3 h-3 rounded-sm flex-shrink-0 ring-1 ring-white/15" :style="`background:${slot.color}`"></div>
+            <div class="flex-1 flex items-center justify-between">
+              <span class="text-sm font-semibold"
+                    :class="selectedId === slot.id ? 'text-white' : 'text-slate-300'"
+                    x-text="'Slot ' + slot.id"></span>
+              <span class="text-[10px] font-mono"
+                    :class="selectedId === slot.id ? 'text-slate-300' : 'text-slate-500'"
+                    x-text="slot.points.length + ' pts'"></span>
+            </div>
+          </div>
+        </template>
+        <div x-show="slots.length === 0" class="text-center text-xs text-slate-600 py-8 px-2">
+          No slots yet.<br />Click <span class="text-emerald-400 font-semibold">Draw Slot</span> to start.
+        </div>
+      </div>
+
+      <!-- PRIMARY actions -->
+      <div class="p-3 border-t border-slate-800 space-y-2">
+        <!-- Export — DOMINANT -->
+        <button @click="exportJSON()"
+                :disabled="slots.length === 0"
+                class="w-full px-3 py-3 rounded-lg font-bold text-sm bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40 disabled:bg-slate-800 disabled:text-slate-600 disabled:shadow-none disabled:cursor-not-allowed transition-all">
+          ↓ Export slots.json
+        </button>
+
+        <!-- Draw — SECONDARY -->
+        <button @click="toggleDraw()"
+                :disabled="!imageLoaded"
+                class="w-full px-3 py-2.5 rounded-lg font-semibold text-sm transition-colors disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                :class="drawMode ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-sky-600/90 hover:bg-sky-500 text-white'">
+          <span x-text="drawMode ? '✕ Cancel Drawing' : '+ Draw Slot'"></span>
+          <kbd class="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white/20 ring-1 ring-white/25"
+               x-text="drawMode ? 'Esc' : 'Ctrl D'"></kbd>
+        </button>
+        <p class="text-[10px] text-slate-500 text-center -mt-1">
+          Press <kbd class="px-1 py-0.5 bg-slate-800 rounded text-slate-300 font-mono text-[10px]">Ctrl</kbd>
+          + <kbd class="px-1 py-0.5 bg-slate-800 rounded text-slate-300 font-mono text-[10px]">D</kbd>
+          anywhere to start drawing
+        </p>
+
+        <!-- Undo — TERTIARY -->
+        <button @click="undoPoint()"
+                :disabled="!drawMode || currentPoints.length === 0"
+                class="w-full px-3 py-1.5 rounded-md text-xs font-medium bg-slate-800/60 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 transition-colors">
+          ↶ Undo Point
+        </button>
+      </div>
+
+      <!-- DESTRUCTIVE — subtle text-only row -->
+      <div class="px-3 pb-3 pt-1 space-y-1.5">
+        <button @click="deleteSelected()"
+                x-show="selectedId !== null"
+                class="w-full px-2.5 py-1.5 rounded-md text-[11px] font-medium text-red-400/90 hover:text-red-300 hover:bg-red-500/10 transition-colors">
+          Delete selected (Slot <span x-text="selectedId"></span>)
+        </button>
+        <div class="grid grid-cols-2 gap-1.5">
+          <button @click="deleteLast()"
+                  :disabled="slots.length === 0"
+                  class="px-2 py-1.5 rounded-md text-[11px] font-medium text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+            Delete last
+          </button>
+          <button @click="clearAll()"
+                  :disabled="slots.length === 0"
+                  class="px-2 py-1.5 rounded-md text-[11px] font-medium text-slate-500 hover:text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+            Clear all
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Canvas area -->
+    <main class="flex-1 relative bg-slate-950 overflow-hidden">
+
+      <!-- Empty state / drop target -->
+      <div x-show="!imageLoaded"
+           class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div class="text-center pulse-soft pointer-events-auto">
+          <div class="text-6xl mb-3">🅿️</div>
+          <div class="text-lg font-semibold text-slate-300">Drag & drop a parking lot image</div>
+          <div class="text-sm text-slate-500 mt-1">…or use <span class="text-sky-400 font-semibold">Load Image</span> from the sidebar</div>
+          <div class="text-xs text-slate-600 mt-4 font-mono">PNG · JPG · WEBP</div>
+        </div>
+      </div>
+
+      <!-- Drag-over hint overlay -->
+      <div x-show="dragHover"
+           class="absolute inset-3 border-2 border-dashed border-sky-500 rounded-2xl bg-sky-500/5 flex items-center justify-center z-20 pointer-events-none">
+        <div class="text-sky-400 font-semibold text-lg">Drop to load image</div>
+      </div>
+
+      <!-- Canvas -->
+      <div class="absolute inset-0 flex items-center justify-center p-4">
+        <canvas id="board"
+                x-show="imageLoaded"
+                @mousemove="onMouseMove($event)"
+                @click="onCanvasClick($event)"
+                :class="drawMode ? 'cursor-draw' : ''"
+                class="max-w-full max-h-full shadow-2xl shadow-black/50 ring-1 ring-slate-800"></canvas>
+      </div>
+
+      <!-- Status bar -->
+      <div class="absolute bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 px-4 py-1.5 text-xs text-slate-400 font-mono flex items-center justify-between">
+        <span x-text="status"></span>
+        <span x-show="imageLoaded" class="text-slate-500" x-text="`${imageW}×${imageH}px`"></span>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div x-show="toast.show"
+       x-transition.opacity
+       class="fixed top-4 right-4 z-30 toast-anim">
+    <div class="px-4 py-2.5 rounded-lg shadow-xl backdrop-blur ring-1 text-sm font-medium"
+         :class="toast.kind === 'success'
+            ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/40'
+            : toast.kind === 'error'
+              ? 'bg-red-500/15 text-red-300 ring-red-500/40'
+              : 'bg-slate-800/90 text-slate-200 ring-slate-700'">
+      <span x-text="toast.message"></span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function slotEditor() {
+  return {
+    // ── State ───────────────────────────────────────────────
+    image: null,
+    imageLoaded: false,
+    imageW: 0,
+    imageH: 0,
+    scale: 1,
+
+    slots: [],
+    selectedId: null,
+
+    drawMode: false,
+    currentPoints: [],     // [[ox, oy], ...] in original image coords
+    mousePos: null,        // {x, y} in original image coords (for preview)
+
+    dragHover: false,
+    status: 'Load an image to begin.',
+    toast: { show: false, message: '', kind: 'info', _t: null },
+
+    canvas: null,
+    ctx: null,
+
+    // ── Init ────────────────────────────────────────────────
+    init() {
+      this.canvas = document.getElementById('board');
+      this.ctx = this.canvas.getContext('2d');
+
+      // Global drag & drop
+      window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        this.dragHover = true;
+      });
+      window.addEventListener('dragleave', (e) => {
+        if (e.clientX === 0 && e.clientY === 0) this.dragHover = false;
+      });
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        this.dragHover = false;
+        const file = e.dataTransfer?.files?.[0];
+        if (file) this.loadImage(file);
+      });
+
+      // Keyboard
+      document.addEventListener('keydown', (e) => this.onKey(e));
+
+      // Resize
+      window.addEventListener('resize', () => this.fitCanvas());
+    },
+
+    // ── Image loading ──────────────────────────────────────
+    onPick(e) {
+      const file = e.target.files?.[0];
+      if (file) this.loadImage(file);
+    },
+
+    loadImage(file) {
+      if (!file.type.startsWith('image/')) {
+        this.showToast('Not an image file.', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          this.image = img;
+          this.imageW = img.naturalWidth;
+          this.imageH = img.naturalHeight;
+          this.imageLoaded = true;
+          this.slots = [];
+          this.selectedId = null;
+          this.drawMode = false;
+          this.currentPoints = [];
+          this.fitCanvas();
+          this.status = `Loaded ${file.name} (${this.imageW}×${this.imageH}). Click "Draw Slot" to begin.`;
+          this.showToast('Image loaded', 'success');
+        };
+        img.onerror = () => this.showToast('Failed to decode image.', 'error');
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    },
+
+    // ── Canvas fitting ─────────────────────────────────────
+    fitCanvas() {
+      if (!this.image) return;
+      const main = this.canvas.parentElement;
+      const maxW = main.clientWidth - 32;
+      const maxH = main.clientHeight - 32;
+      const ratio = Math.min(maxW / this.imageW, maxH / this.imageH, 1);
+      this.scale = ratio;
+      this.canvas.width = Math.round(this.imageW * ratio);
+      this.canvas.height = Math.round(this.imageH * ratio);
+      this.redraw();
+    },
+
+    // ── Coordinate helpers ─────────────────────────────────
+    toImage(clientX, clientY) {
+      const r = this.canvas.getBoundingClientRect();
+      return [(clientX - r.left) / this.scale, (clientY - r.top) / this.scale];
+    },
+    toCanvas(ox, oy) {
+      return [ox * this.scale, oy * this.scale];
+    },
+
+    // ── Drawing ────────────────────────────────────────────
+    redraw() {
+      if (!this.image) return;
+      const ctx = this.ctx;
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.drawImage(this.image, 0, 0, this.canvas.width, this.canvas.height);
+
+      // Finalized slots
+      for (const slot of this.slots) {
+        this.drawSlot(slot, slot.id === this.selectedId);
+      }
+
+      // In-progress polygon
+      if (this.drawMode && this.currentPoints.length > 0) {
+        this.drawCurrent();
+      }
+    },
+
+    drawSlot(slot, selected) {
+      const ctx = this.ctx;
+      const pts = slot.points.map(p => this.toCanvas(p[0], p[1]));
+
+      // Fill
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+      ctx.fillStyle = this.colorWithAlpha(slot.color, selected ? 0.32 : 0.20);
+      ctx.fill();
+
+      // Stroke
+      ctx.lineWidth = selected ? 4 : 2.5;
+      ctx.strokeStyle = selected ? this.lighten(slot.color) : slot.color;
+      ctx.stroke();
+
+      // Label
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      ctx.font = 'bold 14px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0,0,0,0.85)';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = '#fff';
+      ctx.fillText('#' + slot.id, cx, cy);
+      ctx.shadowBlur = 0;
+
+      // Vertex handles for selected slot
+      if (selected) {
+        for (const [x, y] of pts) {
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = '#fff';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = slot.color;
+          ctx.stroke();
+        }
+      }
+    },
+
+    drawCurrent() {
+      const ctx = this.ctx;
+      const pts = this.currentPoints.map(p => this.toCanvas(p[0], p[1]));
+      const color = '#f59e0b';        // amber-500 — "in progress" warm tone
+      const colorSoft = 'rgba(245, 158, 11, 0.55)';
+
+      // Solid connecting lines between placed points
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = color;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke();
+
+      // Softer rubber-band line from last point to cursor
+      if (this.mousePos) {
+        const [mx, my] = this.toCanvas(this.mousePos.x, this.mousePos.y);
+        ctx.beginPath();
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = colorSoft;
+        ctx.moveTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+        ctx.lineTo(mx, my);
+        ctx.stroke();
+      }
+
+      // Placed vertex dots
+      for (const [x, y] of pts) {
+        ctx.beginPath();
+        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+      }
+
+      // Close hint (when ≥3 points, mouse near first point)
+      if (this.currentPoints.length >= 3 && this.mousePos) {
+        const [fx, fy] = pts[0];
+        const [mx, my] = this.toCanvas(this.mousePos.x, this.mousePos.y);
+        if (Math.hypot(mx - fx, my - fy) < 15) {
+          ctx.beginPath();
+          ctx.arc(fx, fy, 11, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.85)';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#fff';
+          ctx.stroke();
+        }
+      }
+    },
+
+    // ── Mouse handlers ─────────────────────────────────────
+    onMouseMove(e) {
+      if (!this.imageLoaded) return;
+      const [ox, oy] = this.toImage(e.clientX, e.clientY);
+      this.mousePos = { x: ox, y: oy };
+      if (this.drawMode && this.currentPoints.length > 0) {
+        this.redraw();
+      }
+    },
+
+    onCanvasClick(e) {
+      if (!this.imageLoaded) return;
+      const [ox, oy] = this.toImage(e.clientX, e.clientY);
+
+      if (this.drawMode) {
+        // Close-on-first-point check
+        if (this.currentPoints.length >= 3) {
+          const [fx, fy] = this.toCanvas(this.currentPoints[0][0], this.currentPoints[0][1]);
+          const [cx, cy] = this.toCanvas(ox, oy);
+          if (Math.hypot(cx - fx, cy - fy) < 15) {
+            this.closePolygon();
+            return;
+          }
+        }
+        this.currentPoints.push([ox, oy]);
+        this.status = `${this.currentPoints.length} point(s) placed. ${this.currentPoints.length >= 3 ? 'Click first point or press Enter to close.' : 'Keep clicking…'}`;
+        this.redraw();
+      } else {
+        // Select hit-test
+        const hit = this.hitTestSlot(ox, oy);
+        this.selectedId = hit;
+        this.redraw();
+      }
+    },
+
+    hitTestSlot(ox, oy) {
+      for (let i = this.slots.length - 1; i >= 0; i--) {
+        if (this.pointInPolygon(ox, oy, this.slots[i].points)) {
+          return this.slots[i].id;
+        }
+      }
+      return null;
+    },
+
+    pointInPolygon(px, py, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i], [xj, yj] = poly[j];
+        const intersect = ((yi > py) !== (yj > py))
+          && (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    },
+
+    // ── Slot management ────────────────────────────────────
+    toggleDraw() {
+      this.drawMode = !this.drawMode;
+      this.currentPoints = [];
+      if (this.drawMode) {
+        this.selectedId = null;
+        this.status = 'Click to place vertices. Click the first point (or press Enter) to close.';
+      } else {
+        this.status = 'Drawing cancelled.';
+      }
+      this.redraw();
+    },
+
+    undoPoint() {
+      if (!this.drawMode || this.currentPoints.length === 0) return;
+      this.currentPoints.pop();
+      this.status = `Removed last point. ${this.currentPoints.length} remaining.`;
+      this.redraw();
+    },
+
+    closePolygon() {
+      if (this.currentPoints.length < 3) {
+        this.showToast('Need at least 3 points.', 'error');
+        return;
+      }
+      const newId = this.slots.length === 0 ? 1 : Math.max(...this.slots.map(s => s.id)) + 1;
+      this.slots.push({
+        id: newId,
+        points: this.currentPoints.map(p => [Math.round(p[0]), Math.round(p[1])]),
+        color: this.colorFor(newId),
+      });
+      this.selectedId = newId;
+      this.drawMode = false;
+      this.currentPoints = [];
+      this.status = `Slot ${newId} created (${this.slots[this.slots.length - 1].points.length} vertices). Total: ${this.slots.length}.`;
+      this.redraw();
+    },
+
+    selectSlot(id) {
+      if (this.drawMode) return;
+      this.selectedId = this.selectedId === id ? null : id;
+      this.redraw();
+    },
+
+    deleteSelected() {
+      if (this.selectedId === null) return;
+      const id = this.selectedId;
+      this.slots = this.slots.filter(s => s.id !== id);
+      this.renumber();
+      this.selectedId = null;
+      this.status = `Deleted slot ${id}.`;
+      this.redraw();
+    },
+
+    deleteLast() {
+      if (this.slots.length === 0) return;
+      const removed = this.slots.pop();
+      if (this.selectedId === removed.id) this.selectedId = null;
+      this.renumber();
+      this.status = `Deleted last slot (${removed.id}).`;
+      this.redraw();
+    },
+
+    clearAll() {
+      if (this.slots.length === 0) return;
+      if (!confirm(`Delete all ${this.slots.length} slot(s)?`)) return;
+      this.slots = [];
+      this.selectedId = null;
+      this.drawMode = false;
+      this.currentPoints = [];
+      this.status = 'Cleared all slots.';
+      this.redraw();
+    },
+
+    renumber() {
+      this.slots.forEach((s, i) => {
+        s.id = i + 1;
+        s.color = this.colorFor(s.id);
+      });
+    },
+
+    // ── Export ─────────────────────────────────────────────
+    exportJSON() {
+      if (this.slots.length === 0) return;
+      const data = this.slots.map((s, i) => ({
+        id: i + 1,
+        points: s.points.map(p => [Math.round(p[0]), Math.round(p[1])]),
+      }));
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'slots.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      this.showToast(`Exported ${data.length} slot(s) → slots.json`, 'success');
+    },
+
+    // ── Keyboard ───────────────────────────────────────────
+    onKey(e) {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+
+      if (e.key === 'Escape') {
+        if (this.drawMode) { this.toggleDraw(); }
+        else if (this.selectedId !== null) { this.selectedId = null; this.redraw(); }
+      } else if (e.key === 'Enter') {
+        if (this.drawMode && this.currentPoints.length >= 3) this.closePolygon();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.selectedId !== null) { e.preventDefault(); this.deleteSelected(); }
+      } else if (e.key === 'z' || e.key === 'Z') {
+        if (this.drawMode) { e.preventDefault(); this.undoPoint(); }
+      } else if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey)) {
+        if (this.imageLoaded) { e.preventDefault(); this.toggleDraw(); }
+      } else if (e.key === 'e' || e.key === 'E') {
+        if (this.slots.length > 0) { e.preventDefault(); this.exportJSON(); }
+      }
+    },
+
+    // ── Toast ──────────────────────────────────────────────
+    showToast(message, kind = 'info') {
+      this.toast.message = message;
+      this.toast.kind = kind;
+      this.toast.show = true;
+      if (this.toast._t) clearTimeout(this.toast._t);
+      this.toast._t = setTimeout(() => { this.toast.show = false; }, 2400);
+    },
+
+    // ── Color helpers ──────────────────────────────────────
+    colorFor(id) {
+      // Curated palette of distinct, accessible colors. Cycles past 8 slots.
+      const palette = [
+        'hsl(152, 65%, 50%)',  // emerald
+        'hsl(25, 92%, 55%)',   // orange
+        'hsl(199, 88%, 52%)',  // sky blue
+        'hsl(266, 75%, 65%)',  // violet
+        'hsl(330, 82%, 60%)',  // pink
+        'hsl(187, 85%, 45%)',  // cyan
+        'hsl(83, 70%, 48%)',   // lime
+        'hsl(350, 88%, 62%)',  // rose
+      ];
+      return palette[(id - 1) % palette.length];
+    },
+    colorWithAlpha(hsl, alpha) {
+      // Convert "hsl(h, s%, l%)" → "hsla(h, s%, l%, a)"
+      return hsl.replace('hsl(', 'hsla(').replace(')', `, ${alpha})`);
+    },
+    lighten(hsl) {
+      // Bump lightness by ~15%
+      return hsl.replace(/(\d+)%\)$/, (_, l) => `${Math.min(100, parseInt(l, 10) + 15)}%)`);
+    },
+  };
+}
+</script>
+</body>
+</html>
