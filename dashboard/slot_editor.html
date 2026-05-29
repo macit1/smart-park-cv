@@ -184,6 +184,7 @@
       <div class="absolute inset-0 flex items-center justify-center p-4">
         <canvas id="board"
                 x-show="imageLoaded"
+                @mousedown="onCanvasMouseDown($event)"
                 @mousemove="onMouseMove($event)"
                 @click="onCanvasClick($event)"
                 :class="drawMode ? 'cursor-draw' : ''"
@@ -232,6 +233,12 @@ function slotEditor() {
     currentPoints: [],     // [[ox, oy], ...] in original image coords
     mousePos: null,        // {x, y} in original image coords (for preview)
 
+    // Edit-after-draw drag state (selected slot only)
+    dragVertex: null,      // { slotId, vertexIdx }
+    dragPolygon: null,     // { slotId, startImagePos: [ox,oy], originalPoints }
+    mouseDownPos: null,    // client-space {x,y} for hasDragged threshold
+    hasDragged: false,
+
     dragHover: false,
     status: 'Load an image to begin.',
     toast: { show: false, message: '', kind: 'info', _t: null },
@@ -241,6 +248,12 @@ function slotEditor() {
 
     // ── Init ────────────────────────────────────────────────
     init() {
+      if (this._initialized) {
+        console.warn('[slotEditor] init() skipped — already initialized (Alpine called it twice).');
+        return;
+      }
+      this._initialized = true;
+
       this.canvas = document.getElementById('board');
       this.ctx = this.canvas.getContext('2d');
 
@@ -264,6 +277,9 @@ function slotEditor() {
 
       // Resize
       window.addEventListener('resize', () => this.fitCanvas());
+
+      // End any drag even if mouseup happens outside the canvas
+      window.addEventListener('mouseup', () => this.endDrag());
     },
 
     // ── Image loading ──────────────────────────────────────
@@ -437,17 +453,126 @@ function slotEditor() {
     },
 
     // ── Mouse handlers ─────────────────────────────────────
+    onCanvasMouseDown(e) {
+      if (!this.imageLoaded || this.drawMode) return;
+
+      this.mouseDownPos = { x: e.clientX, y: e.clientY };
+      this.hasDragged = false;
+
+      // Drag is only enabled on the currently selected slot.
+      if (this.selectedId === null) return;
+      const slot = this.slots.find(s => s.id === this.selectedId);
+      if (!slot) return;
+
+      const r = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+
+      // Priority 1 — vertex grab
+      for (let i = 0; i < slot.points.length; i++) {
+        const [vx, vy] = this.toCanvas(slot.points[i][0], slot.points[i][1]);
+        if (Math.hypot(vx - mx, vy - my) < 10) {
+          this.dragVertex = { slotId: slot.id, vertexIdx: i };
+          this.canvas.style.cursor = 'grabbing';
+          return;
+        }
+      }
+
+      // Priority 2 — polygon interior → move whole slot
+      const [ox, oy] = this.toImage(e.clientX, e.clientY);
+      if (this.pointInPolygon(ox, oy, slot.points)) {
+        this.dragPolygon = {
+          slotId: slot.id,
+          startImagePos: [ox, oy],
+          originalPoints: slot.points.map(p => [...p]),
+        };
+        this.canvas.style.cursor = 'grabbing';
+      }
+    },
+
     onMouseMove(e) {
       if (!this.imageLoaded) return;
       const [ox, oy] = this.toImage(e.clientX, e.clientY);
       this.mousePos = { x: ox, y: oy };
+
+      // Detect drag threshold so a click after dragging isn't treated as a select
+      if (this.mouseDownPos) {
+        const dx = e.clientX - this.mouseDownPos.x;
+        const dy = e.clientY - this.mouseDownPos.y;
+        if (Math.hypot(dx, dy) > 3) this.hasDragged = true;
+      }
+
+      // Active vertex drag
+      if (this.dragVertex) {
+        const slot = this.slots.find(s => s.id === this.dragVertex.slotId);
+        if (slot) {
+          slot.points[this.dragVertex.vertexIdx] = [Math.round(ox), Math.round(oy)];
+          this.redraw();
+        }
+        return;
+      }
+
+      // Active polygon translate
+      if (this.dragPolygon) {
+        const slot = this.slots.find(s => s.id === this.dragPolygon.slotId);
+        if (slot) {
+          const dx = ox - this.dragPolygon.startImagePos[0];
+          const dy = oy - this.dragPolygon.startImagePos[1];
+          slot.points = this.dragPolygon.originalPoints.map(p => [
+            Math.round(p[0] + dx),
+            Math.round(p[1] + dy),
+          ]);
+          this.redraw();
+        }
+        return;
+      }
+
+      // Drawing preview
       if (this.drawMode && this.currentPoints.length > 0) {
         this.redraw();
+        return;
       }
+
+      // Cursor feedback over the selected slot
+      if (this.selectedId !== null) {
+        const slot = this.slots.find(s => s.id === this.selectedId);
+        if (slot) {
+          const r = this.canvas.getBoundingClientRect();
+          const mx = e.clientX - r.left, my = e.clientY - r.top;
+          for (const p of slot.points) {
+            const [vx, vy] = this.toCanvas(p[0], p[1]);
+            if (Math.hypot(vx - mx, vy - my) < 10) {
+              this.canvas.style.cursor = 'grab';
+              return;
+            }
+          }
+          if (this.pointInPolygon(ox, oy, slot.points)) {
+            this.canvas.style.cursor = 'move';
+            return;
+          }
+        }
+      }
+      this.canvas.style.cursor = '';
+    },
+
+    endDrag() {
+      if (this.dragVertex || this.dragPolygon) {
+        this.dragVertex = null;
+        this.dragPolygon = null;
+        this.canvas.style.cursor = '';
+        this.status = 'Slot updated.';
+      }
+      this.mouseDownPos = null;
     },
 
     onCanvasClick(e) {
       if (!this.imageLoaded) return;
+
+      // If a drag just finished, suppress the trailing click
+      if (this.hasDragged) {
+        this.hasDragged = false;
+        return;
+      }
+
       const [ox, oy] = this.toImage(e.clientX, e.clientY);
 
       if (this.drawMode) {
@@ -593,6 +718,7 @@ function slotEditor() {
 
     // ── Keyboard ───────────────────────────────────────────
     onKey(e) {
+      if (e.repeat) return;  // ignore OS auto-repeat so Ctrl+D doesn't toggle twice
       const tag = (e.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
 
