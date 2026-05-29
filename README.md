@@ -36,10 +36,11 @@ Park_Sense/
 ├── main.py                  # Entry point — parse args, load config, start pipeline
 ├── config.yaml              # All settings (model, video, thresholds)
 ├── requirements.txt         # Python dependencies
+├── dashboard/               # Standalone Web GUI dashboards
+│   └── slot_editor.html     # Tailwind+Alpine slot configuration editor (AND-28)
 ├── core/
 │   ├── detector.py          # VehicleDetector class — YOLOv8 inference
-│   ├── pipeline.py          # run() for full video, run_frame() for single frame
-│   └── slot_server.py       # Web-based slot configuration editor (Flask)
+│   └── pipeline.py          # run() for full video, run_frame() for single frame
 ├── utils/
 │   ├── config.py            # load_config(), apply_overrides()
 │   ├── video.py             # open_video(), extract_frame(), get_display_size()
@@ -188,7 +189,7 @@ python main.py --video videos/test.mp4 --save outputs/result_final.mp4 --no-disp
 | Phase | What | Status |
 |-------|------|--------|
 | 1 | Detect vehicles with YOLOv8, draw bounding boxes, full CLI | ✅ Done |
-| 2 | Manual slot configuration via web-based interactive editor | ⬜ Next |
+| 2 | Manual Slot Editor Web UI (Tailwind CSS + Alpine.js + Canvas) | ⬜ Next |
 | 3 | Color-coded overlay (red=occupied, green=empty) + counter | ⬜ Planned |
 | 4 | Geometric corrections (bird's eye view, perspective transform) | ⬜ Future |
 
