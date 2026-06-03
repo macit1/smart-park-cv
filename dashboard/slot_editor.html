@@ -55,6 +55,8 @@
       <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Z</kbd> undo point</span>
       <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Esc</kbd> cancel</span>
       <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">E</kbd> export</span>
+      <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Scroll</kbd> zoom</span>
+      <span><kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Ctrl 0</kbd> reset view</span>
     </div>
   </header>
 
@@ -65,13 +67,19 @@
     <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0">
 
       <!-- TOP: Load Image — first action user takes -->
-      <div class="p-3 border-b border-slate-800">
+      <div class="p-3 border-b border-slate-800 space-y-2">
         <label class="block w-full text-center px-3 py-2.5 rounded-lg font-semibold text-sm cursor-pointer transition-all"
                :class="!imageLoaded
                   ? 'bg-sky-600 hover:bg-sky-500 text-white shadow-lg shadow-sky-900/40 ring-1 ring-sky-400/40'
                   : 'bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700'">
           <span x-text="imageLoaded ? '📁 Change Image…' : '📁 Load Image to Begin'"></span>
           <input type="file" accept="image/*" class="hidden" @change="onPick($event)" />
+        </label>
+
+        <label x-show="imageLoaded"
+               class="block w-full text-center px-3 py-2 rounded-lg font-semibold text-xs cursor-pointer transition-all bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700">
+          <span>📂 Import slots.json…</span>
+          <input type="file" accept=".json" class="hidden" @change="onImportJSON($event)" />
         </label>
       </div>
 
@@ -140,11 +148,17 @@
 
       <!-- DESTRUCTIVE — subtle text-only row -->
       <div class="px-3 pb-3 pt-1 space-y-1.5">
-        <button @click="deleteSelected()"
-                x-show="selectedId !== null"
-                class="w-full px-2.5 py-1.5 rounded-md text-[11px] font-medium text-red-400/90 hover:text-red-300 hover:bg-red-500/10 transition-colors">
-          Delete selected (Slot <span x-text="selectedId"></span>)
-        </button>
+        <div x-show="selectedId !== null" class="flex gap-1.5">
+          <button @click="duplicateSelected()"
+                  class="flex-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-sky-400/90 hover:text-sky-300 hover:bg-sky-500/10 transition-colors">
+            ⧉ Duplicate <span x-text="selectedId"></span>
+            <kbd class="ml-1 px-1 py-0.5 bg-slate-800 rounded text-slate-400 font-mono text-[9px]">Alt D</kbd>
+          </button>
+          <button @click="deleteSelected()"
+                  class="flex-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-red-400/90 hover:text-red-300 hover:bg-red-500/10 transition-colors">
+            Delete <span x-text="selectedId"></span>
+          </button>
+        </div>
         <div class="grid grid-cols-2 gap-1.5">
           <button @click="deleteLast()"
                   :disabled="slots.length === 0"
@@ -181,20 +195,21 @@
       </div>
 
       <!-- Canvas -->
-      <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="absolute inset-0">
         <canvas id="board"
                 x-show="imageLoaded"
                 @mousedown="onCanvasMouseDown($event)"
                 @mousemove="onMouseMove($event)"
                 @click="onCanvasClick($event)"
+                @wheel.prevent="onWheel($event)"
                 :class="drawMode ? 'cursor-draw' : ''"
-                class="max-w-full max-h-full shadow-2xl shadow-black/50 ring-1 ring-slate-800"></canvas>
+                class="w-full h-full"></canvas>
       </div>
 
       <!-- Status bar -->
       <div class="absolute bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 px-4 py-1.5 text-xs text-slate-400 font-mono flex items-center justify-between">
         <span x-text="status"></span>
-        <span x-show="imageLoaded" class="text-slate-500" x-text="`${imageW}×${imageH}px`"></span>
+        <span x-show="imageLoaded" class="text-slate-500" x-text="`${imageW}×${imageH}px · ${Math.round(viewZoom * 100)}%`"></span>
       </div>
 
     </main>
@@ -233,9 +248,14 @@ function slotEditor() {
     currentPoints: [],     // [[ox, oy], ...] in original image coords
     mousePos: null,        // {x, y} in original image coords (for preview)
 
+    viewZoom: 1,
+    panX: 0,
+    panY: 0,
+
     // Edit-after-draw drag state (selected slot only)
     dragVertex: null,      // { slotId, vertexIdx }
     dragPolygon: null,     // { slotId, startImagePos: [ox,oy], originalPoints }
+    dragPan: null,         // { startX, startY, startPanX, startPanY }
     mouseDownPos: null,    // client-space {x,y} for hasDragged threshold
     hasDragged: false,
 
@@ -280,6 +300,48 @@ function slotEditor() {
 
       // End any drag even if mouseup happens outside the canvas
       window.addEventListener('mouseup', () => this.endDrag());
+
+      // Check for URL parameters to auto-load image and slots
+      const urlParams = new URLSearchParams(window.location.search);
+      const imgParam = urlParams.get('image');
+      const slotsParam = urlParams.get('slots');
+
+      if (imgParam) {
+        this.status = `Loading image from ${imgParam}...`;
+        fetch(imgParam)
+          .then(res => {
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return res.blob();
+          })
+          .then(blob => {
+            const filename = imgParam.split('/').pop() || 'image.jpg';
+            const file = new File([blob], filename, { type: blob.type });
+            
+            const onLoadCallback = () => {
+              if (slotsParam) {
+                this.status = `Loading slots from ${slotsParam}...`;
+                fetch(slotsParam)
+                  .then(res => {
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                    return res.json();
+                  })
+                  .then(data => {
+                    this.loadSlotsData(data, slotsParam.split('/').pop() || 'slots.json');
+                  })
+                  .catch(err => {
+                    this.showToast('Failed to load remote slots.', 'error');
+                    console.error(err);
+                  });
+              }
+            };
+            
+            this.loadImage(file, onLoadCallback);
+          })
+          .catch(err => {
+            this.showToast('Failed to load remote image.', 'error');
+            console.error(err);
+          });
+      }
     },
 
     // ── Image loading ──────────────────────────────────────
@@ -288,7 +350,7 @@ function slotEditor() {
       if (file) this.loadImage(file);
     },
 
-    loadImage(file) {
+    loadImage(file, callback = null) {
       if (!file.type.startsWith('image/')) {
         this.showToast('Not an image file.', 'error');
         return;
@@ -308,6 +370,7 @@ function slotEditor() {
           this.fitCanvas();
           this.status = `Loaded ${file.name} (${this.imageW}×${this.imageH}). Click "Draw Slot" to begin.`;
           this.showToast('Image loaded', 'success');
+          if (callback) callback();
         };
         img.onerror = () => this.showToast('Failed to decode image.', 'error');
         img.src = ev.target.result;
@@ -315,26 +378,99 @@ function slotEditor() {
       reader.readAsDataURL(file);
     },
 
+    loadSlotsData(data, sourceName = 'JSON') {
+      if (!Array.isArray(data)) {
+        this.showToast('JSON must be an array of slots.', 'error');
+        return;
+      }
+
+      const loadedSlots = [];
+      data.forEach((item, index) => {
+        // Support 'points', 'polygon', or 'bbox'
+        let points = item.points || item.polygon || item.bbox;
+        if (!points) return;
+
+        // Convert bbox [x1, y1, x2, y2] -> polygon
+        if (points.length === 4 && typeof points[0] === 'number') {
+          const [x1, y1, x2, y2] = points;
+          points = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]];
+        }
+
+        if (!Array.isArray(points) || points.length < 3) {
+          console.warn("Skipped invalid shape:", item);
+          return;
+        }
+
+        const slotId = item.id !== undefined ? parseInt(item.id, 10) : (index + 1);
+
+        loadedSlots.push({
+          id: slotId,
+          points: points.map(p => [Math.round(p[0]), Math.round(p[1])]),
+          color: this.colorFor(slotId)
+        });
+      });
+
+      if (loadedSlots.length === 0) {
+        this.showToast('No valid slots found in JSON.', 'error');
+        return;
+      }
+
+      this.slots = loadedSlots;
+      this.renumber(); // Ensure IDs are ordered and contiguous starting at 1
+      this.selectedId = null;
+      this.drawMode = false;
+      this.currentPoints = [];
+      this.redraw();
+
+      this.status = `Imported ${this.slots.length} slot(s) from ${sourceName}.`;
+      this.showToast(`Imported ${this.slots.length} slot(s)`, 'success');
+    },
+
+    onImportJSON(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          this.loadSlotsData(data, file.name);
+        } catch (err) {
+          this.showToast('Failed to parse slots.json.', 'error');
+          console.error(err);
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    },
+
     // ── Canvas fitting ─────────────────────────────────────
     fitCanvas() {
       if (!this.image) return;
       const main = this.canvas.parentElement;
-      const maxW = main.clientWidth - 32;
-      const maxH = main.clientHeight - 32;
-      const ratio = Math.min(maxW / this.imageW, maxH / this.imageH, 1);
+      this.canvas.width = main.clientWidth;
+      this.canvas.height = main.clientHeight;
+      const ratio = Math.min(main.clientWidth / this.imageW, main.clientHeight / this.imageH);
       this.scale = ratio;
-      this.canvas.width = Math.round(this.imageW * ratio);
-      this.canvas.height = Math.round(this.imageH * ratio);
+      this.viewZoom = 1;
+      this.panX = (main.clientWidth - this.imageW * ratio) / 2;
+      this.panY = (main.clientHeight - this.imageH * ratio) / 2;
       this.redraw();
+    },
+
+    resetView() {
+      this.fitCanvas();
     },
 
     // ── Coordinate helpers ─────────────────────────────────
     toImage(clientX, clientY) {
       const r = this.canvas.getBoundingClientRect();
-      return [(clientX - r.left) / this.scale, (clientY - r.top) / this.scale];
+      const eff = this.scale * this.viewZoom;
+      return [(clientX - r.left - this.panX) / eff, (clientY - r.top - this.panY) / eff];
     },
     toCanvas(ox, oy) {
-      return [ox * this.scale, oy * this.scale];
+      const eff = this.scale * this.viewZoom;
+      return [ox * eff + this.panX, oy * eff + this.panY];
     },
 
     // ── Drawing ────────────────────────────────────────────
@@ -342,7 +478,8 @@ function slotEditor() {
       if (!this.image) return;
       const ctx = this.ctx;
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      ctx.drawImage(this.image, 0, 0, this.canvas.width, this.canvas.height);
+      const eff = this.scale * this.viewZoom;
+      ctx.drawImage(this.image, this.panX, this.panY, this.imageW * eff, this.imageH * eff);
 
       // Finalized slots
       for (const slot of this.slots) {
@@ -459,34 +596,39 @@ function slotEditor() {
       this.mouseDownPos = { x: e.clientX, y: e.clientY };
       this.hasDragged = false;
 
-      // Drag is only enabled on the currently selected slot.
-      if (this.selectedId === null) return;
-      const slot = this.slots.find(s => s.id === this.selectedId);
-      if (!slot) return;
+      if (this.selectedId !== null) {
+        const slot = this.slots.find(s => s.id === this.selectedId);
+        if (slot) {
+          const r = this.canvas.getBoundingClientRect();
+          const mx = e.clientX - r.left, my = e.clientY - r.top;
 
-      const r = this.canvas.getBoundingClientRect();
-      const mx = e.clientX - r.left, my = e.clientY - r.top;
+          // Priority 1 — vertex grab
+          for (let i = 0; i < slot.points.length; i++) {
+            const [vx, vy] = this.toCanvas(slot.points[i][0], slot.points[i][1]);
+            if (Math.hypot(vx - mx, vy - my) < 10) {
+              this.dragVertex = { slotId: slot.id, vertexIdx: i };
+              this.canvas.style.cursor = 'grabbing';
+              return;
+            }
+          }
 
-      // Priority 1 — vertex grab
-      for (let i = 0; i < slot.points.length; i++) {
-        const [vx, vy] = this.toCanvas(slot.points[i][0], slot.points[i][1]);
-        if (Math.hypot(vx - mx, vy - my) < 10) {
-          this.dragVertex = { slotId: slot.id, vertexIdx: i };
-          this.canvas.style.cursor = 'grabbing';
-          return;
+          // Priority 2 — polygon interior → move whole slot
+          const [ox, oy] = this.toImage(e.clientX, e.clientY);
+          if (this.pointInPolygon(ox, oy, slot.points)) {
+            this.dragPolygon = {
+              slotId: slot.id,
+              startImagePos: [ox, oy],
+              originalPoints: slot.points.map(p => [...p]),
+            };
+            this.canvas.style.cursor = 'grabbing';
+            return;
+          }
         }
       }
 
-      // Priority 2 — polygon interior → move whole slot
-      const [ox, oy] = this.toImage(e.clientX, e.clientY);
-      if (this.pointInPolygon(ox, oy, slot.points)) {
-        this.dragPolygon = {
-          slotId: slot.id,
-          startImagePos: [ox, oy],
-          originalPoints: slot.points.map(p => [...p]),
-        };
-        this.canvas.style.cursor = 'grabbing';
-      }
+      // Priority 3 — pan
+      this.dragPan = { startX: e.clientX, startY: e.clientY, startPanX: this.panX, startPanY: this.panY };
+      this.canvas.style.cursor = 'grabbing';
     },
 
     onMouseMove(e) {
@@ -508,6 +650,14 @@ function slotEditor() {
           slot.points[this.dragVertex.vertexIdx] = [Math.round(ox), Math.round(oy)];
           this.redraw();
         }
+        return;
+      }
+
+      // Active pan
+      if (this.dragPan) {
+        this.panX = this.dragPan.startPanX + (e.clientX - this.dragPan.startX);
+        this.panY = this.dragPan.startPanY + (e.clientY - this.dragPan.startY);
+        this.redraw();
         return;
       }
 
@@ -555,12 +705,12 @@ function slotEditor() {
     },
 
     endDrag() {
-      if (this.dragVertex || this.dragPolygon) {
-        this.dragVertex = null;
-        this.dragPolygon = null;
-        this.canvas.style.cursor = '';
-        this.status = 'Slot updated.';
-      }
+      const wasEditing = this.dragVertex || this.dragPolygon;
+      this.dragVertex = null;
+      this.dragPolygon = null;
+      this.dragPan = null;
+      this.canvas.style.cursor = '';
+      if (wasEditing) this.status = 'Slot updated.';
       this.mouseDownPos = null;
     },
 
@@ -660,6 +810,22 @@ function slotEditor() {
       this.redraw();
     },
 
+    duplicateSelected() {
+      if (this.selectedId === null) return;
+      const slot = this.slots.find(s => s.id === this.selectedId);
+      if (!slot) return;
+      const newId = Math.max(...this.slots.map(s => s.id)) + 1;
+      const offset = Math.round(15 / this.viewZoom);  // offset stays visually consistent at any zoom
+      this.slots.push({
+        id: newId,
+        points: slot.points.map(p => [p[0] + offset, p[1] + offset]),
+        color: this.colorFor(newId),
+      });
+      this.selectedId = newId;
+      this.status = `Duplicated Slot ${slot.id} → Slot ${newId}. Drag to reposition.`;
+      this.redraw();
+    },
+
     deleteSelected() {
       if (this.selectedId === null) return;
       const id = this.selectedId;
@@ -716,6 +882,21 @@ function slotEditor() {
       this.showToast(`Exported ${data.length} slot(s) → slots.json`, 'success');
     },
 
+    // ── Zoom / Pan ─────────────────────────────────────────
+    onWheel(e) {
+      if (!this.imageLoaded) return;
+      const factor = e.deltaY < 0 ? 1.12 : 0.9;
+      const newZoom = Math.max(0.25, Math.min(12, this.viewZoom * factor));
+      const r = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left;
+      const my = e.clientY - r.top;
+      // Keep the image point under the cursor fixed
+      this.panX = mx - (mx - this.panX) * newZoom / this.viewZoom;
+      this.panY = my - (my - this.panY) * newZoom / this.viewZoom;
+      this.viewZoom = newZoom;
+      this.redraw();
+    },
+
     // ── Keyboard ───────────────────────────────────────────
     onKey(e) {
       if (e.repeat) return;  // ignore OS auto-repeat so Ctrl+D doesn't toggle twice
@@ -735,6 +916,10 @@ function slotEditor() {
         if (this.imageLoaded) { e.preventDefault(); this.toggleDraw(); }
       } else if (e.key === 'e' || e.key === 'E') {
         if (this.slots.length > 0) { e.preventDefault(); this.exportJSON(); }
+      } else if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault(); this.resetView();
+      } else if ((e.key === 'd' || e.key === 'D') && e.altKey) {
+        if (this.selectedId !== null) { e.preventDefault(); this.duplicateSelected(); }
       }
     },
 
