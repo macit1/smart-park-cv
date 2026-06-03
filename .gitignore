@@ -15,13 +15,41 @@ env/
 .DS_Store
 Thumbs.db
 
-# Project-specific large files
+# Project-specific large files and datasets
 models/*.pt
-videos/*.mp4
+videos/
 outputs/
+park_data/
 workflow.html
+
+# Video formats
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+
+# Image formats
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+
+# Data & Config files
+slots_*.json
+slots.json
+*.log
 
 # Local untracked documents
 issue.md
 CLAUDE.md
-session_AND-28_slot_editor.md
+session_*.md
+
+# Development & verification scripts
+utils/download_pklot.py
+utils/draw_slots_on_frame.py
+utils/draw_slots_on_video.py
+utils/video_generator.py
+
+
