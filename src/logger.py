@@ -1,3 +1,5 @@
+"""Console logger shared by every module."""
+
 import logging
 import sys
 

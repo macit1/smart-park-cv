@@ -1,3 +1,5 @@
+"""Video capture helpers: open, seek, and resolve display size."""
+
 import cv2
 
 

@@ -1,3 +1,5 @@
+"""Load config.yaml and apply command-line overrides on top of it."""
+
 import yaml
 
 
@@ -32,4 +34,6 @@ def apply_overrides(config: dict, args) -> dict:
         config["video"]["frame_interval"] = args.frame_interval
     if getattr(args, "max_frames", None) is not None:
         config["video"]["max_frames"] = args.max_frames
+    if getattr(args, "no_slots", False):
+        config["parking"]["slots_path"] = ""
     return config

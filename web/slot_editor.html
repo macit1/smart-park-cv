@@ -1,18 +1,8 @@
-import os
-import json as _json
-import threading
-import webbrowser
-
-from flask import Flask, jsonify, request, send_file, Response
-
-from utils.slots import save_slots
-from utils.logger import logger
-
-_HTML = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Park_Sense — Slot Editor</title>
+<title>parksense — slot editor</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -76,7 +66,7 @@ body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-seri
 </head>
 <body>
 <div id="header">
-  <h1>&#x1F17F; Park_Sense &mdash; Slot Editor</h1>
+  <h1>parksense &mdash; slot editor</h1>
   <span id="mode-label" class="mode-badge">SELECT</span>
   <span style="font-size:12px;color:#8b949e">Click [Draw Slot] to start &nbsp;|&nbsp; Click to add points &nbsp;|&nbsp; Close polygon to finish &nbsp;|&nbsp; S to save</span>
 </div>
@@ -386,46 +376,3 @@ async function saveSlots() {
 </script>
 </body>
 </html>
-"""
-
-
-def run_editor(frame_path: str, initial_slots: list, slots_path: str) -> list:
-    """Start a local Flask server and open the slot editor in the default browser."""
-    app = Flask(__name__, static_folder=None)
-    state = {"slots": list(initial_slots)}
-    done = threading.Event()
-
-    html = _HTML.replace("__INITIAL_SLOTS__", _json.dumps(initial_slots))
-
-    @app.route("/")
-    def index():
-        return Response(html, mimetype="text/html")
-
-    @app.route("/frame")
-    def frame():
-        return send_file(os.path.abspath(frame_path), mimetype="image/jpeg")
-
-    @app.route("/api/slots", methods=["GET"])
-    def get_slots():
-        return jsonify(state["slots"])
-
-    @app.route("/api/slots", methods=["POST"])
-    def post_slots():
-        data = request.get_json()
-        state["slots"] = data
-        save_slots(data, slots_path)
-        logger.info(f"Saved {len(data)} slot(s) to {slots_path}")
-        done.set()
-        return jsonify({"status": "ok", "count": len(data)})
-
-    def _serve():
-        import logging as _log
-        _log.getLogger("werkzeug").setLevel(_log.ERROR)
-        app.run(host="127.0.0.1", port=5050, debug=False, use_reloader=False)
-
-    threading.Thread(target=_serve, daemon=True).start()
-    threading.Timer(1.2, lambda: webbrowser.open("http://127.0.0.1:5050")).start()
-    logger.info("Slot editor → http://127.0.0.1:5050  (save in browser to continue)")
-
-    done.wait()
-    return state["slots"]

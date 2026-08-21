@@ -1,10 +1,13 @@
+"""Full-frame occupancy pipeline over a video or a single frame."""
+
 import cv2
 import time
 import os
-from core.detector import VehicleDetector
-from utils.video import open_video, get_display_size, extract_frame
-from utils.visualizer import draw_detections, draw_stats
-from utils.logger import logger
+from src.detector import VehicleDetector
+from src.video import open_video, get_display_size, extract_frame
+from src.overlay import draw_detections, draw_occupancy_stats, draw_slots, draw_stats
+from src.slots import load_slots, classify_slots
+from src.logger import logger
 
 
 def _make_detector(config: dict) -> VehicleDetector:
@@ -24,6 +27,34 @@ def _make_detector(config: dict) -> VehicleDetector:
     )
 
 
+def _render(frame, detections: list, slots: list, frame_idx: int, total_frames: int) -> int:
+    """Draw the occupancy overlay for one frame, in place.
+
+    With slots configured the slot colour already carries the result, so the
+    raw detection boxes are left off to keep the overlay readable. Without
+    slots the boxes are all there is to show.
+
+    Args:
+        frame: OpenCV image frame (modified in place).
+        detections (list): Detections for this frame.
+        slots (list): Parking slots; empty disables the occupancy overlay.
+        frame_idx (int): Index of this frame.
+        total_frames (int): Total frames the run will cover.
+
+    Returns:
+        int: Number of occupied slots (0 when no slots are configured).
+    """
+    if not slots:
+        draw_detections(frame, detections)
+        draw_stats(frame, frame_idx, total_frames, len(detections))
+        return 0
+
+    occupied_ids = classify_slots(slots, detections)
+    draw_slots(frame, slots, occupied_ids)
+    draw_occupancy_stats(frame, frame_idx, total_frames, len(occupied_ids), len(slots))
+    return len(occupied_ids)
+
+
 def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: str = None, out_fps: float = None, start_sec: int = None, end_sec: int = None) -> None:
     """Main pipeline to process a video, detect vehicles, and optionally save the output.
 
@@ -37,6 +68,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
         end_sec (int, optional): Second to stop processing at.
     """
     detector = _make_detector(config)
+    slots = load_slots(config["parking"].get("slots_path", ""))
     cap = open_video(video_path)
     w, h = get_display_size(config)
 
@@ -92,8 +124,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
                 detections = detector.detect(frame)
                 logger.debug(f"Frame {frame_idx}: ran inference, found {len(detections)} vehicle(s)")
 
-                draw_detections(frame, detections)
-                draw_stats(frame, frame_idx, total_frames, len(detections))
+                _render(frame, detections, slots, frame_idx, total_frames)
 
                 # Resize frame for display/saving *after* drawing to prevent bounding box distortion
                 frame = cv2.resize(frame, (w, h))
@@ -121,7 +152,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
             if frame_idx % (frame_interval * 10) == 0 and frame_idx > start_frame:
                 elapsed = time.time() - start
                 fps_proc = frame_idx / elapsed if elapsed > 0 else 0
-                logger.info(f"Processed {frame_idx}/{total_frames} | Speed: {fps_proc:.1f} fps")
+                logger.info(f"Processed {frame_idx}/{total_frames} | Speed: {fps_proc:.2f} fps")
 
             frame_idx += 1
     finally:
@@ -144,6 +175,7 @@ def run_frame(video_path: str, frame_number: int, config: dict, save_path: str =
         no_display (bool, optional): If True, suppresses the OpenCV display window.
     """
     detector = _make_detector(config)
+    slots = load_slots(config["parking"].get("slots_path", ""))
     cap = open_video(video_path)
     w, h = get_display_size(config)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -152,19 +184,22 @@ def run_frame(video_path: str, frame_number: int, config: dict, save_path: str =
     cap.release()
 
     detections = detector.detect(frame)
-    draw_detections(frame, detections)
-    draw_stats(frame, frame_number, total_frames, len(detections))
+    occupied = _render(frame, detections, slots, frame_number, total_frames)
 
     frame = cv2.resize(frame, (w, h))
 
-    logger.info(f"Frame {frame_number}/{total_frames} | Detected: {len(detections)} vehicle(s)")
+    if slots:
+        logger.info(f"Frame {frame_number}/{total_frames} | "
+                    f"{occupied} occupied / {len(slots) - occupied} free")
+    else:
+        logger.info(f"Frame {frame_number}/{total_frames} | Detected: {len(detections)} vehicle(s)")
 
     if save_path:
         cv2.imwrite(save_path, frame)
         logger.info(f"Saved: {save_path}")
 
     if not no_display:
-        cv2.imshow(f"Park_Sense — Frame {frame_number}", frame)
+        cv2.imshow(f"parksense — frame {frame_number}", frame)
         logger.info("Press any key to close.")
         cv2.waitKey(0)
         cv2.destroyAllWindows()

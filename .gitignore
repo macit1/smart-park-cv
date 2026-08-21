@@ -15,41 +15,24 @@ env/
 .DS_Store
 Thumbs.db
 
-# Project-specific large files and datasets
-models/*.pt
+# Model weights — downloaded on first run, see README
+models/
+*.pt
+
+# Input footage and generated output
 videos/
 outputs/
-park_data/
-workflow.html
+*.log
 
-# Video formats
+# Media. Only the README's demo asset is committed; source footage is not.
 *.mp4
 *.avi
 *.mov
 *.mkv
 *.webm
-
-# Image formats
 *.jpg
 *.jpeg
 *.png
-*.webp
 *.gif
-
-# Data & Config files
-slots_*.json
-slots.json
-*.log
-
-# Local untracked documents
-issue.md
-CLAUDE.md
-session_*.md
-
-# Development & verification scripts
-utils/download_pklot.py
-utils/draw_slots_on_frame.py
-utils/draw_slots_on_video.py
-utils/video_generator.py
-
-
+!assets/demo.gif
+!examples/*.json

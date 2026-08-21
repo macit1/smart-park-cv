@@ -1,5 +1,7 @@
+"""YOLO vehicle detection wrapper for single frames and batches."""
+
 from ultralytics import YOLO
-from utils.logger import logger
+from src.logger import logger
 
 
 class VehicleDetector:
@@ -59,3 +61,46 @@ class VehicleDetector:
             })
 
         return detections
+
+    def detect_batch(self, patches: list, imgsz: int = None) -> list[list[dict]]:
+        """Run a single inference call on a list of image patches.
+
+        Args:
+            patches (list): List of OpenCV image patches (e.g. one per slot).
+            imgsz (int, optional): Inference size for this batch. Defaults to
+                the detector's configured imgsz. Use a small value for small
+                patches to keep latency low.
+
+        Returns:
+            list[list[dict]]: Per-patch detection lists, in the same order as
+                the input patches.
+        """
+        if not patches:
+            return []
+
+        # One forward pass over the whole batch; ultralytics preserves order
+        results = self.model(
+            patches,
+            conf=self.confidence,
+            classes=self.classes,
+            imgsz=imgsz or self.imgsz,
+            verbose=False,
+        )
+
+        batch = []
+        for res in results:
+            detections = []
+            for box in res.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                class_id = int(box.cls[0])
+                class_name = self.model.names.get(class_id, "unknown")
+                conf = float(box.conf[0])
+                detections.append({
+                    "bbox": [x1, y1, x2, y2],
+                    "confidence": conf,
+                    "class_id": class_id,
+                    "class_name": class_name,
+                })
+            batch.append(detections)
+
+        return batch
