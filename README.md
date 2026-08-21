@@ -6,7 +6,7 @@ Counts occupied and free parking spaces from a single fixed camera, with no per-
 
 ## What it does
 
-A parking lot is watched by one overhead camera. Each space is defined once as a polygon; from then on every frame is scored and the lot's occupancy is reported live. There is no hardware in the ground, no per-space wiring, and no per-camera model training — moving the system to a new lot means drawing new polygons, not collecting a new dataset.
+A parking lot is watched by one overhead camera. Each space is defined once as a polygon; from then on every frame is scored and the lot's occupancy is reported. There is no hardware in the ground, no per-space wiring, and no per-camera model training — moving the system to a new lot means drawing new polygons, not collecting a new dataset.
 
 The detector is a YOLOv8 model fine-tuned on over ten thousand hand-cleaned overhead parking images, which labels each space directly as `Empty` or `Occupied`. A stock COCO detector is a poor fit here: it learned cars in side profile, while an overhead camera only ever sees roofs.
 

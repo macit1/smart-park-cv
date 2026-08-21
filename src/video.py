@@ -1,6 +1,25 @@
 """Video capture helpers: open, seek, and resolve display size."""
 
+import os
+
 import cv2
+
+
+def ensure_parent_dir(path: str) -> str:
+    """Create the directory a file is about to be written into.
+
+    OpenCV's writers fail silently when the parent directory is missing, so
+    every output path goes through here first.
+
+    Args:
+        path (str): Path of the file about to be written.
+
+    Returns:
+        str: The same path, unchanged.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    return path
 
 
 def open_video(path: str) -> cv2.VideoCapture:

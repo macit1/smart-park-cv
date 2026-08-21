@@ -4,7 +4,7 @@ import cv2
 import time
 import os
 from src.detector import VehicleDetector
-from src.video import open_video, get_display_size, extract_frame
+from src.video import ensure_parent_dir, extract_frame, get_display_size, open_video
 from src.overlay import draw_detections, draw_occupancy_stats, draw_slots, draw_stats
 from src.slots import load_slots, classify_slots
 from src.logger import logger
@@ -86,7 +86,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
         # Adjust output FPS to maintain real-world playback speed when frames are skipped
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         final_fps = out_fps if out_fps is not None else max(1.0, fps_src / frame_interval)
-        writer = cv2.VideoWriter(save_path, fourcc, final_fps, (w, h))
+        writer = cv2.VideoWriter(ensure_parent_dir(save_path), fourcc, final_fps, (w, h))
         logger.info(f"Saving video to: {save_path} at {final_fps:.1f} FPS")
 
     if save_frames_dir:
@@ -195,7 +195,7 @@ def run_frame(video_path: str, frame_number: int, config: dict, save_path: str =
         logger.info(f"Frame {frame_number}/{total_frames} | Detected: {len(detections)} vehicle(s)")
 
     if save_path:
-        cv2.imwrite(save_path, frame)
+        cv2.imwrite(ensure_parent_dir(save_path), frame)
         logger.info(f"Saved: {save_path}")
 
     if not no_display:

@@ -4,7 +4,7 @@ import cv2
 import time
 
 from src.detector import VehicleDetector
-from src.video import open_video, get_display_size
+from src.video import ensure_parent_dir, get_display_size, open_video
 from src.slots import load_slots, make_tiles, classify_slots
 from src.overlay import draw_slots, draw_occupancy_stats
 from src.logger import logger
@@ -73,7 +73,7 @@ def run_tiled(video_path: str, config: dict, save_path: str = None) -> None:
     if save_path:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out_fps = max(1.0, fps_src / interval)
-        writer = cv2.VideoWriter(save_path, fourcc, out_fps, (w, h))
+        writer = cv2.VideoWriter(ensure_parent_dir(save_path), fourcc, out_fps, (w, h))
         logger.info(f"Saving to {save_path} at {out_fps:.1f} FPS")
 
     logger.info(f"frames: {total_frames} | interval: {interval} | "

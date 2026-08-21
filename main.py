@@ -5,7 +5,7 @@ import cv2
 import os
 
 from src.config import load_config, apply_overrides
-from src.video import get_video_path, extract_frame, open_video
+from src.video import ensure_parent_dir, extract_frame, get_video_path, open_video
 from src.slots import load_slots
 from src.logger import setup_logger, logger
 from src.pipeline import run, run_frame
@@ -57,8 +57,7 @@ def _run_slot_editor(args, config, video_path: str) -> None:
         cap = open_video(video_path)
         frame = extract_frame(cap, frame_num)
         cap.release()
-        os.makedirs("outputs", exist_ok=True)
-        cv2.imwrite(frame_img_path, frame)
+        cv2.imwrite(ensure_parent_dir(frame_img_path), frame)
         logger.info(f"Saved discovery frame {frame_num} → {frame_img_path}")
 
     if os.path.exists(slots_path):
