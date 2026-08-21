@@ -8,7 +8,7 @@ Counts occupied and free parking spaces from a single fixed camera, with no per-
 
 A parking lot is watched by one overhead camera. Each space is defined once as a polygon; from then on every frame is scored and the lot's occupancy is reported. There is no hardware in the ground, no per-space wiring, and no per-camera model training — moving the system to a new lot means drawing new polygons, not collecting a new dataset.
 
-The detector is a YOLOv8 model fine-tuned on over ten thousand hand-cleaned overhead parking images, which labels each space directly as `Empty` or `Occupied`. A stock COCO detector is a poor fit here: it learned cars in side profile, while an overhead camera only ever sees roofs.
+The detector is a YOLOv8 model fine-tuned for 13 epochs on over ten thousand hand-cleaned overhead parking images, which labels each space directly as `Empty` or `Occupied`. A stock COCO detector is a poor fit here: it learned cars in side profile, while an overhead camera only ever sees roofs.
 
 ## How it works
 
@@ -78,7 +78,7 @@ Python 3.12, YOLOv8 (Ultralytics), OpenCV, Flask, plain HTML/SVG for the editor.
 
 This is a working system, not a finished product. It runs end to end and the parts below are where the remaining headroom is.
 
-**The model.** This is the main lever. It is fine-tuned on over ten thousand hand-cleaned overhead images, which is enough to make the approach work but not enough to close it out. Spaces that receive no detection at all are currently rendered as free, so more training data — more lots, more camera angles, more weather and more hours of the day — moves the count directly. The pipeline takes any Ultralytics checkpoint, so retraining means swapping `model.path` in `config.yaml`.
+**The model.** This is the main lever. Thirteen epochs over ten thousand hand-cleaned overhead images is enough to make the approach work, not enough to close it out. Spaces that receive no detection at all are currently rendered as free, so more training data — more lots, more camera angles, more weather and more hours of the day — moves the count directly. The pipeline takes any Ultralytics checkpoint, so retraining means swapping `model.path` in `config.yaml`.
 
 **Occlusion.** A van hides the space behind it and a tree shadows a whole row. Neither is solved by a better detector alone; carrying a space's recent state forward when it is temporarily unobservable would help.
 
