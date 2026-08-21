@@ -1,8 +1,8 @@
-# parksense
+# ParkSense
 
 Counts occupied and free parking spaces from a single fixed camera, with no per-space sensors.
 
-![parksense running on an overhead parking lot clip](assets/demo.gif)
+![ParkSense running on an overhead parking lot clip](assets/demo.gif)
 
 ## What it does
 
