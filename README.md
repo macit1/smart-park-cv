@@ -15,7 +15,8 @@ The detector is a YOLOv8 model fine-tuned on over ten thousand hand-cleaned over
 1. **Define the spaces.** `--discover-slots` extracts a reference frame and serves a local editor in the browser. You draw one polygon per space, drag vertices to fit, and save. The result is a JSON file of polygons, tied to that camera's viewpoint.
 2. **Detect.** Each frame is run through the model, producing `Empty` / `Occupied` boxes.
 3. **Assign to a space.** Each detection's centroid is tested against every polygon with `cv2.pointPolygonTest`. A space containing a non-empty detection is marked occupied.
-4. **Render.** Spaces are filled red or green over the frame, with an occupied / free counter in the corner.
+4. **Steady the verdict.** The per-frame result is folded into a majority vote over the last few frames, so one missed detection does not flip a space and jitter the count.
+5. **Render.** Spaces are filled red or green over the frame, with an occupied / free counter in the corner.
 
 Two decisions worth calling out:
 
@@ -73,9 +74,16 @@ Everything tunable — model path, confidence, inference size, tile grid, editor
 
 Python 3.12, YOLOv8 (Ultralytics), OpenCV, Flask, plain HTML/SVG for the editor.
 
-## Notes and limitations
+## Improvements
 
-- The camera must be fixed. Space polygons are tied to one viewpoint, so any pan, zoom or remount means redrawing them.
-- Occupancy is decided per frame with no temporal smoothing, so a space can flicker between states when a detection is marginal.
-- A space that receives no detection at all is rendered as free. Under heavy occlusion — a van hiding the space behind it, or a tree shadowing a row — the free count reads high.
-- The model was fine-tuned on daylight overhead imagery. Night, heavy rain and snow are outside what it has seen.
+This is a working system, not a finished product. It runs end to end and the parts below are where the remaining headroom is.
+
+**The model.** This is the main lever. It is fine-tuned on over ten thousand hand-cleaned overhead images, which is enough to make the approach work but not enough to close it out. Spaces that receive no detection at all are currently rendered as free, so more training data — more lots, more camera angles, more weather and more hours of the day — moves the count directly. The pipeline takes any Ultralytics checkpoint, so retraining means swapping `model.path` in `config.yaml`.
+
+**Occlusion.** A van hides the space behind it and a tree shadows a whole row. Neither is solved by a better detector alone; carrying a space's recent state forward when it is temporarily unobservable would help.
+
+**Fixed viewpoint.** Space polygons are tied to one camera position, so any pan, zoom or remount means redrawing them. Re-registering a new frame against the reference with a homography would let the polygons follow the camera.
+
+**Latency.** Inference dominates, and the tiled path trades a larger effective resolution against a batch of crops. Exporting the model to ONNX or TensorRT, and tuning `imgsz` against the smallest space in view, is the path to running this on modest hardware.
+
+A short majority-vote window over recent frames already steadies the counter against single-frame misses; the cost is that a genuine arrival takes a few frames to register. `parking.smoothing_window` controls it, and `1` turns it off.

@@ -2,8 +2,47 @@
 
 import json
 import os
+from collections import deque
+
 import numpy as np
 import cv2
+
+
+class OccupancySmoother:
+    """Majority vote over the last N frames, to steady a per-frame verdict.
+
+    A single missed detection flips a slot to free for one frame and back
+    again, which makes the counter jitter. Requiring a slot to be occupied in
+    most of a short window absorbs that without adding real latency.
+    """
+
+    def __init__(self, window: int = 5):
+        """
+        Args:
+            window (int): Frames to vote over. 1 disables smoothing.
+        """
+        self.window = max(1, window)
+        self._history = deque(maxlen=self.window)
+
+    def update(self, occupied_ids: set) -> set:
+        """Fold this frame's verdict into the window and return the smoothed one.
+
+        Args:
+            occupied_ids (set): Slot IDs judged occupied in the current frame.
+
+        Returns:
+            set: Slot IDs occupied in more than half of the buffered frames.
+        """
+        self._history.append(set(occupied_ids))
+        if self.window == 1:
+            return set(occupied_ids)
+
+        votes = {}
+        for frame_ids in self._history:
+            for slot_id in frame_ids:
+                votes[slot_id] = votes.get(slot_id, 0) + 1
+        return {slot_id for slot_id, count in votes.items()
+                if count * 2 > len(self._history)}
 
 
 def classify_slots(slots: list[dict], detections: list[dict]) -> set[int]:

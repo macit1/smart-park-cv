@@ -5,7 +5,7 @@ import time
 
 from src.detector import VehicleDetector
 from src.video import ensure_parent_dir, get_display_size, open_video
-from src.slots import load_slots, make_tiles, classify_slots
+from src.slots import OccupancySmoother, classify_slots, load_slots, make_tiles
 from src.overlay import draw_slots, draw_occupancy_stats
 from src.logger import logger
 
@@ -57,6 +57,8 @@ def run_tiled(video_path: str, config: dict, save_path: str = None) -> None:
         imgsz=config["model"].get("imgsz", 640),
     )
 
+    smoother = OccupancySmoother(config["parking"].get("smoothing_window", 5))
+
     tiling = config.get("tiling", {})
     rows = tiling.get("rows", 3)
     cols = tiling.get("cols", 3)
@@ -96,7 +98,7 @@ def run_tiled(video_path: str, config: dict, save_path: str = None) -> None:
 
                 detections = _detections_from_tiles(detector, frame, tiles,
                                                     config["model"].get("imgsz", 640))
-                occupied_ids = classify_slots(slots, detections)
+                occupied_ids = smoother.update(classify_slots(slots, detections))
 
                 draw_slots(frame, slots, occupied_ids)
                 draw_occupancy_stats(frame, frame_idx, total_frames,

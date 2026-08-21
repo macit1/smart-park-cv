@@ -6,7 +6,7 @@ import os
 from src.detector import VehicleDetector
 from src.video import ensure_parent_dir, extract_frame, get_display_size, open_video
 from src.overlay import draw_detections, draw_occupancy_stats, draw_slots, draw_stats
-from src.slots import load_slots, classify_slots
+from src.slots import OccupancySmoother, classify_slots, load_slots
 from src.logger import logger
 
 
@@ -27,7 +27,8 @@ def _make_detector(config: dict) -> VehicleDetector:
     )
 
 
-def _render(frame, detections: list, slots: list, frame_idx: int, total_frames: int) -> int:
+def _render(frame, detections: list, slots: list, frame_idx: int, total_frames: int,
+            smoother: OccupancySmoother = None) -> int:
     """Draw the occupancy overlay for one frame, in place.
 
     With slots configured the slot colour already carries the result, so the
@@ -40,6 +41,8 @@ def _render(frame, detections: list, slots: list, frame_idx: int, total_frames: 
         slots (list): Parking slots; empty disables the occupancy overlay.
         frame_idx (int): Index of this frame.
         total_frames (int): Total frames the run will cover.
+        smoother (OccupancySmoother, optional): Applied to this frame's
+            verdict when given.
 
     Returns:
         int: Number of occupied slots (0 when no slots are configured).
@@ -50,6 +53,8 @@ def _render(frame, detections: list, slots: list, frame_idx: int, total_frames: 
         return 0
 
     occupied_ids = classify_slots(slots, detections)
+    if smoother:
+        occupied_ids = smoother.update(occupied_ids)
     draw_slots(frame, slots, occupied_ids)
     draw_occupancy_stats(frame, frame_idx, total_frames, len(occupied_ids), len(slots))
     return len(occupied_ids)
@@ -69,6 +74,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
     """
     detector = _make_detector(config)
     slots = load_slots(config["parking"].get("slots_path", ""))
+    smoother = OccupancySmoother(config["parking"].get("smoothing_window", 5))
     cap = open_video(video_path)
     w, h = get_display_size(config)
 
@@ -124,7 +130,7 @@ def run(video_path: str, config: dict, save_path: str = None, save_frames_dir: s
                 detections = detector.detect(frame)
                 logger.debug(f"Frame {frame_idx}: ran inference, found {len(detections)} vehicle(s)")
 
-                _render(frame, detections, slots, frame_idx, total_frames)
+                _render(frame, detections, slots, frame_idx, total_frames, smoother)
 
                 # Resize frame for display/saving *after* drawing to prevent bounding box distortion
                 frame = cv2.resize(frame, (w, h))
